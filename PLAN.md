@@ -137,6 +137,8 @@ CREATE TABLE post (
     reactions        TEXT,                       -- JSON: [{"emoji":"👍","count":5}, ...]
     entities         TEXT,                       -- JSON: text formatting ranges
     is_pinned        INTEGER NOT NULL DEFAULT 0,
+    no_forwards      INTEGER NOT NULL DEFAULT 0, -- channel restricted forwarding/saving
+    grouped_id       INTEGER,                    -- Telegram album/group ID (multiple media in one post)
     forward_from_channel_id INTEGER,
     forward_from_post_id    INTEGER,
     edit_date        TEXT,                       -- ISO8601 if edited
@@ -281,6 +283,9 @@ async def disconnect(client: TelegramClient) -> None
 async def resolve_channel(client: TelegramClient, url: str) -> ChannelInfo
 async def iter_posts(client: TelegramClient, channel_username: str, since_date: datetime | None, limit: int | None = None) -> AsyncIterator[Message]
 async def iter_comments(client: TelegramClient, channel_username: str, post_tg_id: int) -> AsyncIterator[Message]
+# Note: comments exist only if channel has a linked discussion group (linked_chat_id in channelFull).
+# Access via GetRepliesRequest on the discussion group, not the channel itself.
+# Returns empty iterator (not error) if no linked group exists.
 async def download_media_file(client: TelegramClient, message: Message, dest_dir: Path) -> list[MediaFileInfo]
 ```
 
@@ -382,8 +387,10 @@ Every action is logged at an appropriate indent level using a tree structure:
 2. **Post engagement metrics** — archive `views`, `forwards`, `reactions` for analytics
 3. **`post.entities`** — store as JSON; enables reconstructing formatted text (links, hashtags, bold)
 4. **`post.edit_date`** — detect edited posts on re-runs and update the record
-5. **Comment threading** — `comment.reply_to_tg_id` allows full thread reconstruction
-6. **Soft deletes** — add `is_deleted` flag to posts/comments (post may be deleted between runs)
+5. **`post.grouped_id`** — Telegram sends multi-photo albums as separate messages sharing a `grouped_id`; needed to reconstruct albums correctly
+6. **`post.no_forwards`** — channel owner may restrict saving/forwarding; flag this so the UI can mark restricted posts
+7. **Comment threading** — `comment.reply_to_tg_id` allows full thread reconstruction
+8. **Soft deletes** — add `is_deleted` flag to posts/comments (post may be deleted between runs)
 
 ### Backend
 7. **Deduplication by `(channel_id, post_id)`** — always check before insert; safe to re-run
